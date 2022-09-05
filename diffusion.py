@@ -3,10 +3,10 @@ from torchvision import datasets, transforms
 from torchvision.utils import make_grid
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
-import torch.nn as nn
 import torch.optim as optim
-import math
 import os
+
+from model import Net
 
 
 def generate_schedule(steps, initial=1e-4, final=2e-2):
@@ -55,107 +55,6 @@ def forward(x_0, t, device="cuda"):
     x_t = (x_0.to(device) * A_t) + (stdev * E)
 
     return (x_t, E)
-
-
-class Block(nn.Module):
-    def __init__(self, in_ch, out_ch, embed_dim, upconv=False):
-        super().__init__()
-
-        if upconv:
-            conv1 = nn.Conv2d(2 * in_ch, out_ch, 3, padding=1)
-            xform = nn.ConvTranspose2d(out_ch, out_ch, 4, 2, 1)
-        else:
-            conv1 = nn.Conv2d(in_ch, out_ch, 3, padding=1)
-            xform = nn.Conv2d(out_ch, out_ch, 4, 2, 1)
-
-        self.block1 = nn.Sequential(
-            conv1,
-            nn.ReLU(),
-            nn.BatchNorm2d(out_ch),
-        )
-
-        self.time_block = nn.Sequential(nn.Linear(embed_dim, out_ch), nn.ReLU())
-
-        self.block2 = nn.Sequential(
-            nn.Conv2d(out_ch, out_ch, 3, padding=1),
-            nn.ReLU(),
-            nn.BatchNorm2d(out_ch),
-            xform,
-        )
-
-    def forward(self, x, t):
-        t = self.time_block(t)
-        t = t[..., None, None]
-
-        x = self.block1(x)
-        x += t
-        x = self.block2(x)
-
-        return x
-
-
-class Embedding(nn.Module):
-    def __init__(self, ndim):
-        super().__init__()
-        self.ndim = ndim
-
-        if ndim % 2 != 0:
-            raise ValueError("Positional encoding must have an even dimension.")
-
-    def forward(self, t):
-        device = t.device
-        hdim = self.ndim // 2
-
-        embedding = math.log(10000) / (hdim - 1)
-        embedding = torch.exp(torch.arange(0, hdim, device=device) * -embedding)
-        embedding = t[:, None] * embedding[None, :]
-        embedding = torch.cat((embedding.sin(), embedding.cos()), dim=-1)
-
-        return embedding
-
-
-class Net(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-        nch = int(math.log2(image_size) - 2)
-        channels = [2 ** (i + 6) for i in range(0, nch)]
-        embed_dim = 32
-
-        self.time_block = nn.Sequential(
-            Embedding(embed_dim), nn.Linear(embed_dim, embed_dim), nn.ReLU()
-        )
-        self.conv0 = nn.Conv2d(3, channels[0], 3, padding=1)
-        self.dconv = nn.ModuleList(
-            [Block(channels[i], channels[i + 1], embed_dim) for i in range(nch - 1)]
-        )
-        self.uconv = nn.ModuleList(
-            [
-                Block(channels[::-1][i], channels[::-1][i + 1], embed_dim, upconv=True)
-                for i in range(nch - 1)
-            ]
-        )
-
-        self.conv1 = nn.Conv2d(channels[0], 3, 1)
-
-    def forward(self, x, t):
-        t = self.time_block(t)
-        x = self.conv0(x)
-
-        activations = []
-
-        for block in self.dconv:
-            x = block(x, t)
-            activations.append(x)
-
-        for block in self.uconv:
-            activation = activations.pop()
-            x = torch.cat((x, activation), dim=1)
-            x = block(x, t)
-
-        x = self.conv1(x)
-
-        return x
 
 
 def L2Loss(model, x_0, t):
@@ -240,26 +139,30 @@ def test_model(dataloader=None):
     Generate an x_T, then use reverse diffusion model to find x_0
     """
 
+    images = []
     if dataloader != None:
         image = next(iter(dataloader))[0][0]
         image = torch.squeeze(image)
+
+        step = 60
+
+        for idx in range(0, 300, step):
+            t = torch.Tensor([idx]).type(torch.int64)
+            x_t, _ = forward(image, t)
+            images.append(x_t.detach().cpu())
+
+        x = images[-1][None, ...].to(device)
     else:
-        image = torch.randn((3, image_size, image_size))
+        image = torch.randn((3, image_size, image_size)).to(device)
+        x = image[None, ...]
+        step = 30
 
-    images = []
-
-    for idx in range(0, 300, 60):
-        t = torch.Tensor([idx]).type(torch.int64)
-        x_t, _ = forward(image, t)
-        images.append(x_t.detach().cpu())
-
-    x = images[-1][None, ...].to(device)
 
     for idx in reversed(range(300)):
         t = torch.Tensor([idx]).type(torch.int64).to(device)
         x = denoise(x, t)
 
-        if idx % 60 == 0:
+        if idx % step == 0:
             images.append(torch.squeeze(x.detach().cpu()))
 
     grid = make_grid(images, nrow=10, normalize=True, value_range=(-1, 1))
@@ -302,7 +205,7 @@ if __name__ == "__main__":
     posterior_variance = beta * (1 - alpha_bar_prev) / (1 - alpha_bar)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = Net().to(device)
+    model = Net(image_size).to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
     dataloader = create_dataloader((image_size, image_size), batch_size)
@@ -315,8 +218,9 @@ if __name__ == "__main__":
         test_forward_process(dataloader)
 
     # Set to True to generate an image from random noise
-    if False:
-        test_model()
+    if True:
+        for x in range(25):
+            test_model()
     else:
         for epoch in range(0, 100):
             print("-" * 32)
