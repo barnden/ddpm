@@ -235,28 +235,31 @@ def test_forward_process(dataloader):
 
 
 @torch.no_grad()
-def test_model(dataloader):
+def test_model(dataloader=None):
     """
     Generate an x_T, then use reverse diffusion model to find x_0
     """
 
-    image = next(iter(dataloader))[0][0]
-    image = torch.squeeze(image)
+    if dataloader != None:
+        image = next(iter(dataloader))[0][0]
+        image = torch.squeeze(image)
+    else:
+        image = torch.randn((3, image_size, image_size))
 
     images = []
 
-    for idx in range(0, 300, 10):
+    for idx in range(0, 300, 60):
         t = torch.Tensor([idx]).type(torch.int64)
-        xt, _ = forward(image, t)
-        images.append(xt.detach().cpu())
+        x_t, _ = forward(image, t)
+        images.append(x_t.detach().cpu())
 
     x = images[-1][None, ...].to(device)
 
-    for idx in range(300):
+    for idx in reversed(range(300)):
         t = torch.Tensor([idx]).type(torch.int64).to(device)
         x = denoise(x, t)
 
-        if idx % 10 == 0:
+        if idx % 60 == 0:
             images.append(torch.squeeze(x.detach().cpu()))
 
     grid = make_grid(images, nrow=10, normalize=True, value_range=(-1, 1))
@@ -275,7 +278,7 @@ def denoise(x, t):
     E_theta = model(x, t)
     mdl = srat * (x - betas_t * E_theta / somact)
 
-    if t[0] == 0:
+    if t == 0:
         return mdl
 
     noise = torch.randn_like(x)
@@ -286,20 +289,17 @@ def denoise(x, t):
 
 
 if __name__ == "__main__":
-    batch_size = 128
-    image_size = 32
+    batch_size = 32
+    image_size = 64
 
-    alpha, beta = generate_schedule(steps=300)
+    nsteps = 300
+    alpha, beta = generate_schedule(steps=nsteps)
     alpha_bar = torch.cumprod(alpha, dim=0)
     alpha_bar_sqrt = torch.sqrt(alpha_bar)
     one_minus_alpha_bar_sqrt = torch.sqrt(1.0 - alpha_bar)
     alpha_bar_recip_sqrt = torch.sqrt(1.0 / alpha)
     alpha_bar_prev = F.pad(alpha_bar[:-1], (1, 0), value=1.0)
     posterior_variance = beta * (1 - alpha_bar_prev) / (1 - alpha_bar)
-
-    # Set to True to view the progression of the forward process
-    if False:
-        test_forward_process(dataloader)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = Net().to(device)
@@ -310,14 +310,15 @@ if __name__ == "__main__":
     if os.path.exists("model.pth"):
         model.load_state_dict(torch.load("model.pth"))
 
-        # test_model() takes a random image from the dataset
-        # applies the forward process in T=300 steps
-        # then does the denoising process.
-        for i in range(10):
-            test_model(dataloader)
+    # Set to True to view the progression of the forward process
+    if False:
+        test_forward_process(dataloader)
 
+    # Set to True to generate an image from random noise
+    if False:
+        test_model()
     else:
-        for epoch in range(18, 100):
+        for epoch in range(0, 100):
             print("-" * 32)
             print(f"Epoch {epoch + 1}")
             print("-" * 32)
@@ -325,7 +326,7 @@ if __name__ == "__main__":
             for step, batch in enumerate(dataloader):
                 optimizer.zero_grad()
 
-                t = torch.randint(0, 300, (batch_size,), device=device).long()
+                t = torch.randint(0, nsteps, (batch_size,), device=device).long()
                 x_0 = batch[0].to(device)
 
                 loss = L2Loss(model, x_0, t)
