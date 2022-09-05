@@ -1,5 +1,4 @@
 import torch
-import torchvision
 from torchvision import datasets, transforms
 from torchvision.utils import make_grid
 import matplotlib.pyplot as plt
@@ -7,6 +6,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 import torch.optim as optim
 import math
+import os
 
 
 def generate_schedule(steps, initial=1e-4, final=2e-2):
@@ -307,8 +307,7 @@ if __name__ == "__main__":
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
     dataloader = create_dataloader((image_size, image_size), batch_size)
 
-    # Set to True to load "model.pth" to test the model
-    if False:
+    if os.path.exists("model.pth"):
         model.load_state_dict(torch.load("model.pth"))
 
         # test_model() takes a random image from the dataset
