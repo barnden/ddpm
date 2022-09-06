@@ -217,6 +217,7 @@ def parse_args():
     parser.add_argument("--image_size", nargs='?', help="Set side length of square image", type=int, default=64)
     parser.add_argument("--steps", nargs='?', help="Number of steps", type=int, default=300)
     parser.add_argument("--test_forward_process", help="Test forward diffusion process", action='store_true')
+    parser.add_argument("--parallel", help="Run model in parallel if multiple GPUs, defaults to all available GPUs", action='store_true')
 
     args = parser.parse_args()
 
@@ -242,7 +243,12 @@ if __name__ == "__main__":
 
     # Create/load model
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = Net(image_size).to(device)
+    model = Net(image_size)
+
+    if args.parallel:
+        model = torch.nn.DataParallel(model)
+
+    model.to(device)
 
     if not args.disable_dataloader:
         dataloader = create_dataloader((image_size, image_size), batch_size)
