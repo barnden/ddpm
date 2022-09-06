@@ -95,10 +95,10 @@ def create_dataloader(image_size=(256, 256), batch_size=5):
     )
 
     traindata = datasets.CelebA(
-        "./data", split="train", transform=transform, download=True
+        args.data_path, split="train", transform=transform, download=True
     )
     testdata = datasets.CelebA(
-        "./data", split="test", transform=transform, download=True
+        args.data_path, split="test", transform=transform, download=True
     )
 
     dataset = torch.utils.data.ConcatDataset([traindata, testdata])
@@ -218,6 +218,7 @@ def parse_args():
     parser.add_argument("--steps", nargs='?', help="Number of steps", type=int, default=300)
     parser.add_argument("--test_forward_process", help="Test forward diffusion process", action='store_true')
     parser.add_argument("--parallel", help="Run model in parallel if multiple GPUs, defaults to all available GPUs", action='store_true')
+    parser.add_argument("--data_path", help="Where to load/save datasets", type=str, default="./data")
 
     args = parser.parse_args()
 
