@@ -1,7 +1,6 @@
 import argparse
 import os
 import torch
-import matplotlib.pyplot as plt
 from torchvision import datasets, transforms
 from torchvision.utils import make_grid
 import torch.nn.functional as F
@@ -111,71 +110,6 @@ def create_dataloader(image_size=(256, 256), batch_size=5):
 
 
 @torch.no_grad()
-def test_forward_process(dataloader):
-    """
-    Generate x_t for t=0 to t=nsteps by increments of 10.
-    Used to debug the forward process.
-    """
-
-    image = next(iter(dataloader))[0][0]
-    image = torch.squeeze(image)
-
-    images = []
-
-    for idx in range(0, nsteps, 10):
-        t = torch.Tensor([idx]).type(torch.int64)
-        xt, _ = forward(image, t)
-        images.append(xt.detach().cpu())
-
-    grid = make_grid(images, nrow=5, normalize=True, value_range=(-1, 1))
-    grid = grid.permute(1, 2, 0).numpy()
-
-    plt.imshow(grid)
-    plt.show()
-
-
-@torch.no_grad()
-def generate(dataloader=None):
-    """
-    Generate an x_T, then use reverse diffusion model to find x_0.
-
-    If a dataloader is given, then we take the first image as x_0.
-    This x_0 is passed into the forward process to generate x_T,
-    which is then denoised into a predicted x'_0.
-    """
-
-    images = []
-    if dataloader != None:
-        image = next(iter(dataloader))[0][0]
-        image = torch.squeeze(image)
-        step = 60
-
-        for idx in range(0, 300, step):
-            t = torch.Tensor([idx]).type(torch.int64)
-            x_t, _ = forward(image, t)
-            images.append(x_t.detach().cpu())
-
-        x = images[-1][None, ...].to(device)
-    else:
-        image = torch.randn((3, image_size, image_size)).to(device)
-        step = 30
-        x = image[None, ...]
-
-    for idx in reversed(range(300)):
-        t = torch.Tensor([idx]).type(torch.int64).to(device)
-        x = denoise(x, t)
-
-        if idx % step == 0:
-            images.append(torch.squeeze(x.detach().cpu()))
-
-    grid = make_grid(images, nrow=10, normalize=True, value_range=(-1, 1))
-    grid = grid.permute(1, 2, 0).numpy()
-
-    plt.imshow(grid)
-    plt.show()
-
-
-@torch.no_grad()
 def denoise(x, t):
     """
     Given an image :math:`x_t`, denoise the image using the model to find :math:`x_{t - 1}`.
@@ -209,16 +143,53 @@ def denoise(x, t):
 def parse_args():
     parser = argparse.ArgumentParser("diffusion")
 
-    parser.add_argument("model", nargs='?', help="Load saved weights for model", type=str, default=None)
-    parser.add_argument("--generate", help="Use diffusion to synthesize an image given a model", action='store_true')
-    parser.add_argument("--disable_dataloader", help="Disable loading dataset", action='store_true')
-    parser.add_argument("--epochs", nargs='?', help="Number of epochs for training", type=bool, default=100)
-    parser.add_argument("--batch", nargs='?', help="Set batch size", type=int, default=32)
-    parser.add_argument("--image_size", nargs='?', help="Set side length of square image", type=int, default=64)
-    parser.add_argument("--steps", nargs='?', help="Number of steps", type=int, default=300)
-    parser.add_argument("--test_forward_process", help="Test forward diffusion process", action='store_true')
-    parser.add_argument("--parallel", help="Run model in parallel if multiple GPUs, defaults to all available GPUs", action='store_true')
-    parser.add_argument("--data_path", help="Where to load/save datasets", type=str, default="./data")
+    parser.add_argument(
+        "model", nargs="?", help="Load saved weights for model", type=str, default=None
+    )
+    parser.add_argument(
+        "--generate",
+        help="Use diffusion to synthesize an image given a model",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--disable_dataloader", help="Disable loading dataset", action="store_true"
+    )
+    parser.add_argument(
+        "--epochs",
+        nargs="?",
+        help="Number of epochs for training",
+        type=bool,
+        default=100,
+    )
+    parser.add_argument(
+        "--batch", nargs="?", help="Set batch size", type=int, default=32
+    )
+    parser.add_argument(
+        "--image_size",
+        nargs="?",
+        help="Set side length of square image",
+        type=int,
+        default=64,
+    )
+    parser.add_argument(
+        "--steps", nargs="?", help="Number of steps", type=int, default=300
+    )
+    parser.add_argument(
+        "--test_forward_process",
+        help="Test forward diffusion process",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--parallel",
+        help="Run model in parallel if multiple GPUs, defaults to all available GPUs",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--data_path", help="Where to load/save datasets", type=str, default="./data"
+    )
+    parser.add_argument(
+        "--headless", help="Disable matplotlib functions", action="store_true"
+    )
 
     args = parser.parse_args()
 
@@ -257,15 +228,83 @@ if __name__ == "__main__":
     if args.model != None and os.path.exists(args.model):
         model.load_state_dict(torch.load(args.model))
 
-    if args.test_forward_process:
-        test_forward_process(dataloader)
+    if not args.headless:
+        # FIXME: Refactor this block into different file; this looks ugly
+        import matplotlib.pyplot as plt
 
-    if args.generate:
-        if args.disable_dataloader:
-            generate()
-        else:
-            generate(dataloader)
-    elif not args.disable_dataloader:
+        @torch.no_grad()
+        def test_forward_process(dataloader):
+            """
+            Generate x_t for t=0 to t=nsteps by increments of 10.
+            Used to debug the forward process.
+            """
+
+            image = next(iter(dataloader))[0][0]
+            image = torch.squeeze(image)
+
+            images = []
+
+            for idx in range(0, nsteps, 10):
+                t = torch.Tensor([idx]).type(torch.int64)
+                xt, _ = forward(image, t)
+                images.append(xt.detach().cpu())
+
+            grid = make_grid(images, nrow=5, normalize=True, value_range=(-1, 1))
+            grid = grid.permute(1, 2, 0).numpy()
+
+            plt.imshow(grid)
+            plt.show()
+
+        @torch.no_grad()
+        def generate(dataloader=None):
+            """
+            Generate an x_T, then use reverse diffusion model to find x_0.
+
+            If a dataloader is given, then we take the first image as x_0.
+            This x_0 is passed into the forward process to generate x_T,
+            which is then denoised into a predicted x'_0.
+            """
+
+            images = []
+            if dataloader != None:
+                image = next(iter(dataloader))[0][0]
+                image = torch.squeeze(image)
+                step = 60
+
+                for idx in range(0, 300, step):
+                    t = torch.Tensor([idx]).type(torch.int64)
+                    x_t, _ = forward(image, t)
+                    images.append(x_t.detach().cpu())
+
+                x = images[-1][None, ...].to(device)
+            else:
+                image = torch.randn((3, image_size, image_size)).to(device)
+                step = 30
+                x = image[None, ...]
+
+            for idx in reversed(range(300)):
+                t = torch.Tensor([idx]).type(torch.int64).to(device)
+                x = denoise(x, t)
+
+                if idx % step == 0:
+                    images.append(torch.squeeze(x.detach().cpu()))
+
+            grid = make_grid(images, nrow=10, normalize=True, value_range=(-1, 1))
+            grid = grid.permute(1, 2, 0).numpy()
+
+            plt.imshow(grid)
+            plt.show()
+
+        if args.test_forward_process:
+            test_forward_process(dataloader)
+
+        if args.generate:
+            if args.disable_dataloader:
+                generate()
+            else:
+                generate(dataloader)
+
+    if not args.disable_dataloader:
         optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
         for epoch in range(args.epochs):
