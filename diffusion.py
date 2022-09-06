@@ -1,10 +1,11 @@
+import argparse
+import os
 import torch
+import matplotlib.pyplot as plt
 from torchvision import datasets, transforms
 from torchvision.utils import make_grid
-import matplotlib.pyplot as plt
 import torch.nn.functional as F
 import torch.optim as optim
-import os
 
 from model import Net
 
@@ -76,7 +77,7 @@ def forward(x_0, t):
 def L2Loss(model, x_0, t):
     # Find L2 distance between predicted epsilon and actual epsilon.
 
-    x_t, E = forward(x_0, t, device)
+    x_t, E = forward(x_0, t)
     predicted_E = model(x_t, t)
 
     return F.mse_loss(predicted_E, E)
@@ -205,10 +206,29 @@ def denoise(x, t):
     return predicted
 
 
+def parse_args():
+    parser = argparse.ArgumentParser("diffusion")
+
+    parser.add_argument("model", nargs='?', help="Load saved weights for model", type=str, default=None)
+    parser.add_argument("--generate", help="Use diffusion to synthesize an image given a model", action='store_true')
+    parser.add_argument("--disable_dataloader", help="Disable loading dataset", action='store_true')
+    parser.add_argument("--epochs", nargs='?', help="Number of epochs for training", type=bool, default=100)
+    parser.add_argument("--batch", nargs='?', help="Set batch size", type=int, default=32)
+    parser.add_argument("--image_size", nargs='?', help="Set side length of square image", type=int, default=64)
+    parser.add_argument("--steps", nargs='?', help="Number of steps", type=int, default=300)
+    parser.add_argument("--test_forward_process", help="Test forward diffusion process", action='store_true')
+
+    args = parser.parse_args()
+
+    return args
+
+
 if __name__ == "__main__":
-    batch_size = 32
-    image_size = 64
-    nsteps = 300
+    args = parse_args()
+
+    batch_size = args.batch
+    image_size = args.image_size
+    nsteps = args.steps
 
     (
         alpha,
@@ -224,23 +244,24 @@ if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = Net(image_size).to(device)
 
-    dataloader = create_dataloader((image_size, image_size), batch_size)
+    if not args.disable_dataloader:
+        dataloader = create_dataloader((image_size, image_size), batch_size)
 
-    if os.path.exists("model.pth"):
-        model.load_state_dict(torch.load("model.pth"))
+    if args.model != None and os.path.exists(args.model):
+        model.load_state_dict(torch.load(args.model))
 
-    # Set to True to view the progression of the forward process
-    if False:
+    if args.test_forward_process:
         test_forward_process(dataloader)
 
-    # Set to True to generate an image from random noise
-    if True:
-        # Optional: Pass dataloader to take a random image, add noise, then reverse noise to generate a nearest neighbour image
-        generate()
-    else:
+    if args.generate:
+        if args.disable_dataloader:
+            generate()
+        else:
+            generate(dataloader)
+    elif not args.disable_dataloader:
         optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
-        for epoch in range(0, 100):
+        for epoch in range(args.epochs):
             print("-" * 32)
             print(f"Epoch {epoch + 1}")
             print("-" * 32)
