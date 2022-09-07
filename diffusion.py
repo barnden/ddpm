@@ -190,6 +190,9 @@ def parse_args():
     parser.add_argument(
         "--headless", help="Disable matplotlib functions", action="store_true"
     )
+    parser.add_argument(
+        "--learning_rate", help="Set learning rate on Adam optimizer", type=float, default=1e-3
+    )
 
     args = parser.parse_args()
 
@@ -305,7 +308,7 @@ if __name__ == "__main__":
                 generate(dataloader)
 
     if not args.disable_dataloader and not args.generate:
-        optimizer = optim.Adam(model.parameters(), lr=1e-3)
+        optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
 
         for epoch in range(args.epochs):
             print("-" * 32)
