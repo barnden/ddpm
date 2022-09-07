@@ -325,4 +325,4 @@ if __name__ == "__main__":
                 if step % 100 == 0:
                     print(f"\tstep {step}, loss {loss:>.8f}")
 
-            torch.save(model.state_dict(), "model.pth")
+            torch.save(model.state_dict(), args.model if args.model != None else "model.pth")
