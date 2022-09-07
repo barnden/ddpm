@@ -304,7 +304,7 @@ if __name__ == "__main__":
             else:
                 generate(dataloader)
 
-    if not args.disable_dataloader:
+    if not args.disable_dataloader and not args.generate:
         optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
         for epoch in range(args.epochs):
