@@ -158,7 +158,7 @@ def parse_args():
         "--epochs",
         nargs="?",
         help="Number of epochs for training",
-        type=bool,
+        type=int,
         default=100,
     )
     parser.add_argument(
