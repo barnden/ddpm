@@ -272,9 +272,9 @@ if __name__ == "__main__":
             if dataloader != None:
                 image = next(iter(dataloader))[0][0]
                 image = torch.squeeze(image)
-                step = 60
+                step = nsteps // 5
 
-                for idx in range(0, 300, step):
+                for idx in range(0, nsteps, step):
                     t = torch.Tensor([idx]).type(torch.int64)
                     x_t, _ = forward(image, t)
                     images.append(x_t.detach().cpu())
@@ -282,10 +282,10 @@ if __name__ == "__main__":
                 x = images[-1][None, ...].to(device)
             else:
                 image = torch.randn((3, image_size, image_size)).to(device)
-                step = 30
+                step = nsteps // 10
                 x = image[None, ...]
 
-            for idx in reversed(range(300)):
+            for idx in reversed(range(nsteps)):
                 t = torch.Tensor([idx]).type(torch.int64).to(device)
                 x = denoise(x, t)
 
