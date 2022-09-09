@@ -99,14 +99,21 @@ def create_dataloader(image_size=(256, 256), batch_size=5):
     testdata = datasets.CelebA(
         args.data_path, split="test", transform=transform, download=True
     )
-
-    dataset = torch.utils.data.ConcatDataset([traindata, testdata])
-
-    dataloader = torch.utils.data.DataLoader(
-        dataset, batch_size=batch_size, shuffle=True, drop_last=True
+    validdata = datasets.CelebA(
+        args.data_path, split="valid", transform=transform, download=True
     )
 
-    return dataloader
+    trainloader = torch.utils.data.DataLoader(
+        traindata, batch_size=batch_size, shuffle=True, drop_last=True
+    )
+    validloader = torch.utils.data.DataLoader(
+        validdata, batch_size=batch_size, shuffle=True, drop_last=True
+    )
+    testloader = torch.utils.data.DataLoader(
+        testdata, batch_size=batch_size, shuffle=True, drop_last=True
+    )
+
+    return (trainloader, validloader, testloader)
 
 
 @torch.no_grad()
@@ -140,6 +147,54 @@ def denoise(x, t):
     return predicted
 
 
+def save_model():
+    torch.save(model.state_dict(), args.model if args.model != None else "model.pth")
+
+
+def train_model(train, validate):
+    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+
+    for epoch in range(args.epochs):
+        print("-" * 32)
+        print(f"Epoch {epoch + 1}")
+        print("-" * 32)
+
+        for step, batch in enumerate(train):
+            optimizer.zero_grad()
+
+            t = torch.randint(0, nsteps, (batch_size,), device=device).long()
+            x_0 = batch[0].to(device)
+
+            loss = L2Loss(model, x_0, t)
+            loss.backward()
+            optimizer.step()
+
+            if step % 100 == 0:
+                print(f"\tstep {step}, loss {loss:>.8f}")
+
+                if step % 250 == 0:
+                    validation_loss = validate_model(validate)
+                    print(f"validation {epoch+1}/{step}: {validation_loss:>.8f}")
+
+                    if step > 0 and step % 500 == 0:
+                        save_model()
+
+
+@torch.no_grad()
+def validate_model(loader):
+    total_loss = 0
+
+    for (x_0, _) in loader:
+        t = torch.randint(0, nsteps, (batch_size,), device=device).long()
+        x_0 = x_0.to(device)
+
+        total_loss += L2Loss(model, x_0, t).item()
+
+    loss = total_loss / len(loader)
+
+    return loss
+
+
 def parse_args():
     parser = argparse.ArgumentParser("diffusion")
 
@@ -152,7 +207,7 @@ def parse_args():
         action="store_true",
     )
     parser.add_argument(
-        "--disable_dataloader", help="Disable loading dataset", action="store_true"
+        "--disable_dataloader", help="Disable loading datasets", action="store_true"
     )
     parser.add_argument(
         "--epochs",
@@ -191,7 +246,10 @@ def parse_args():
         "--headless", help="Disable matplotlib functions", action="store_true"
     )
     parser.add_argument(
-        "--learning_rate", help="Set learning rate on Adam optimizer", type=float, default=1e-3
+        "--learning_rate",
+        help="Set learning rate on Adam optimizer",
+        type=float,
+        default=1e-3,
     )
 
     args = parser.parse_args()
@@ -226,7 +284,9 @@ if __name__ == "__main__":
     model.to(device)
 
     if not args.disable_dataloader:
-        dataloader = create_dataloader((image_size, image_size), batch_size)
+        trainloader, validloader, testloader = create_dataloader(
+            (image_size, image_size), batch_size
+        )
 
     if args.model != None and os.path.exists(args.model):
         model.load_state_dict(torch.load(args.model))
@@ -299,33 +359,13 @@ if __name__ == "__main__":
             plt.show()
 
         if args.test_forward_process:
-            test_forward_process(dataloader)
+            test_forward_process(trainloader)
 
         if args.generate:
             if args.disable_dataloader:
                 generate()
             else:
-                generate(dataloader)
+                generate(testloader)
 
     if not args.disable_dataloader and not args.generate:
-        optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
-
-        for epoch in range(args.epochs):
-            print("-" * 32)
-            print(f"Epoch {epoch + 1}")
-            print("-" * 32)
-
-            for step, batch in enumerate(dataloader):
-                optimizer.zero_grad()
-
-                t = torch.randint(0, nsteps, (batch_size,), device=device).long()
-                x_0 = batch[0].to(device)
-
-                loss = L2Loss(model, x_0, t)
-                loss.backward()
-                optimizer.step()
-
-                if step % 100 == 0:
-                    print(f"\tstep {step}, loss {loss:>.8f}")
-
-            torch.save(model.state_dict(), args.model if args.model != None else "model.pth")
+        train_model(trainloader, validloader)
